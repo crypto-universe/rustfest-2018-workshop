@@ -133,6 +133,8 @@ fn main() {
         Some(a) => a,
         None    => "".to_owned(),
     };
+    // TODO: use future::Either for match to choose between arms!!!
+    // refactor this ugly solution!!!
     if !dial_address.is_empty() {
         let dial_multiaddr: Multiaddr = dial_address
             .parse()
