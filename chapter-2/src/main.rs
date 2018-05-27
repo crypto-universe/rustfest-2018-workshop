@@ -36,6 +36,8 @@ extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_stdin;
 
+use std::str::FromStr;
+
 use futures::{Future, Stream};
 use tokio_core::reactor::Core;
 
@@ -138,7 +140,24 @@ fn main() {
 
     // This is a place-holder. Thanks to the `tokio-stdin` crate, create a stream that produces
     // the messages obtained from stdin, and call `for_each()` on it to obtain a future.
-    let stdin_future = futures::future::empty();
+    for addr in std::env::args().skip(1) {
+        let arg_addr = Multiaddr::from_str(&addr).expect("Sorry, can't parse your address.");
+        let _dialled = swarm_controller.dial(arg_addr, upgr_trans_with_muxing.clone());
+    }
+
+    let receiver: futures::sync::mpsc::UnboundedReceiver<u8> =
+        tokio_stdin::spawn_stdin_stream_unbounded();
+    let mut buffer: Vec<u8> = Vec::new();
+    let stdin_future = receiver.for_each(|symbol| {
+        if symbol != ('\n' as u8) {
+            buffer.push(symbol);
+        } else {
+            floodsub_controller.publish(&topic, buffer.clone());
+            buffer.clear();
+        }
+        futures::future::ok(())
+
+    }).map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Error1"));
 
     // `final_future` is a future that contains all the behaviour that we want, but nothing has
     // actually started yet. Because we created the `TcpConfig` with tokio, we need to run the
