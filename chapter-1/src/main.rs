@@ -33,6 +33,8 @@ extern crate libp2p;
 extern crate tokio_core;
 extern crate tokio_io;
 
+use std::str::from_utf8;
+
 use futures::{Future, Stream};
 use tokio_io::io;
 use tokio_core::reactor::Core;
@@ -94,10 +96,10 @@ fn main() {
             // For each incoming connection, write "Hello world" to it and return a future that
             // represents the moment when the writing finished.
             println!("Successfully received incoming connection from {}", remote_addr);
-            io::write_all(data_stream, b"hello world")
+            io::write_all(data_stream, b"hello planet")
                 .map(|_| ())
         });
-    
+
     // We now have `listener_finished_future`, which is a future representing the moment when
     // the listener is closed or has finished processing everything.
 
@@ -127,15 +129,43 @@ fn main() {
 
     // This is a place-holder. Dial the remote and produce a future that represents the moment
     // when you've read the hello world message sent to us.
-    let dialer_finished_future = futures::future::empty();
+    let dial_address = match std::env::args().nth(1) {
+        Some(a) => a,
+        None    => "".to_owned(),
+    };
+    if !dial_address.is_empty() {
+        let dial_multiaddr: Multiaddr = dial_address
+            .parse()
+            .expect("failed to parse multiaddress from first argument!");
 
-    // `final_future` is a future that contains all the behaviour that we want ; it represents the
-    // moment when the both the stream of incoming connections is over and when we finished reading
-    // the hello world when dialing. However nothing has actually started yet. Because we created
-    // the `TcpConfig` with tokio, we need to run the future through the tokio core.
-    let final_future = listener_finished_future
-        .select(dialer_finished_future)
-        .map(|_| ())
-        .map_err(|(err, _)| err);
-    core.run(final_future).unwrap();
+        let buffer: Vec<u8> = Vec::new();
+        //let dialer_finished_future = futures::future::empty();
+        let dialer_finished_future = transport
+            //.clone()
+            .dial(dial_multiaddr)
+            .expect("Dial multiaggress failed!")
+            .and_then(|(stream, _multiaddr)|{
+                tokio_io::io::read_to_end(stream, buffer)
+                    .map(|(_, buf)| {
+                        println!("{0}", from_utf8(&buf).unwrap_or("Some problem occured"))
+                    })
+            });
+
+        // `final_future` is a future that contains all the behaviour that we want ; it represents the
+        // moment when the both the stream of incoming connections is over and when we finished reading
+        // the hello world when dialing. However nothing has actually started yet. Because we created
+        // the `TcpConfig` with tokio, we need to run the future through the tokio core.
+        let final_future = listener_finished_future
+            .select(dialer_finished_future)
+            .map(|_| ())
+            .map_err(|(err, _)| err);
+        core.run(final_future).unwrap();
+    } else {
+        let dialer_finished_future = futures::future::empty();
+        let final_future = listener_finished_future
+            .select(dialer_finished_future)
+            .map(|_| ())
+            .map_err(|(err, _)| err);
+        core.run(final_future).unwrap();
+    }
 }
